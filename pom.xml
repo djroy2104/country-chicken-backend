@@ -31,7 +31,17 @@
         <springdoc.version>1.7.0</springdoc.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+    <distributionManagement>
+        <snapshotRepository>
+            <id>nexus-snapshots</id>
+            <url>http://13.203.104.252:8081/repository/maven-snapshots/</url>
+        </snapshotRepository>
 
+        <repository>
+            <id>nexus-releases</id>
+            <url>http://13.203.104.252:8081/repository/maven-releases/</url>
+        </repository>
+    </distributionManagement>
     <!-- ===================== -->
     <!-- Dependencies -->
     <!-- ===================== -->
@@ -124,3 +134,4 @@
     </profiles>
 
 </project>
+
