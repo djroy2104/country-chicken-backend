@@ -7,116 +7,77 @@ pipeline {
     }
 
     environment {
-        APP_NAME         = 'country-chicken-backend'
-
-        NEXUS_MAVEN_URL  = '13.203.104.252:8081'
-        NEXUS_DOCKER_URL = '13.203.104.252:8082'
-
-        MAVEN_REPO       = 'maven-releases'
-        DOCKER_REPO      = 'docker-releases'
-
-        GROUP_ID         = 'com.countrychicken'
-        VERSION          = ''
-        JAR_NAME         = ''
+        MAVEN_REPO_URL = 'http://127.0.0.1:8081/repository/maven-releases/'
+        DOCKER_REGISTRY = '127.0.0.1:8082/docker-releases'
+        DOCKER_IMAGE = 'country-chicken-backend'
+        DOCKER_TAG = '1.0.0'
     }
 
     stages {
 
         stage('Checkout') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/djroy2104/country-chicken-backend.git'
-            }
-        }
-
-        stage('Set Version') {
-            steps {
-                script {
-                    VERSION = sh(
-                        script: "mvn help:evaluate -Dexpression=project.version -q -DforceStdout",
-                        returnStdout: true
-                    ).trim()
-
-                    if (!VERSION) {
-                        error "❌ Version not found from pom.xml"
-                    }
-
-                    JAR_NAME = "${APP_NAME}-${VERSION}.jar"
-                    echo "✅ Version: ${VERSION}"
-                }
+                git branch: 'main', url: 'https://github.com/djroy2104/country-chicken-backend.git'
             }
         }
 
         stage('Build JAR') {
             steps {
-                sh 'mvn clean package -DskipTests'
+                sh "mvn clean package -DskipTests"
             }
         }
 
-        stage('Upload JAR to Nexus') {
+        stage('Upload to Nexus Maven') {
             steps {
-                nexusArtifactUploader(
-                    nexusVersion: 'nexus3',
-                    protocol: 'http',
-                    nexusUrl: "${NEXUS_MAVEN_URL}",
-                    groupId: "${GROUP_ID}",
-                    version: "${VERSION}",
-                    repository: "${MAVEN_REPO}",
-                    credentialsId: 'nexus-credentials',
-                    artifacts: [
-                        [
-                            artifactId: "${APP_NAME}",
-                            classifier: '',
-                            file: "target/${JAR_NAME}",
-                            type: 'jar'
-                        ]
-                    ]
-                )
+                withCredentials([usernamePassword(credentialsId: 'nexus-credentials', 
+                    usernameVariable: 'NEXUS_USER', 
+                    passwordVariable: 'NEXUS_PASS')]) {
+                    sh """
+                        mvn deploy:deploy-file \
+                          -DgroupId=com.countrychicken \
+                          -DartifactId=country-chicken-backend \
+                          -Dversion=${DOCKER_TAG} \
+                          -Dpackaging=jar \
+                          -Dfile=target/country-chicken-backend-${DOCKER_TAG}.jar \
+                          -DrepositoryId=maven-releases \
+                          -Durl=${MAVEN_REPO_URL} \
+                          -DretryFailedDeploymentCount=3 \
+                          -Dusername=$NEXUS_USER \
+                          -Dpassword=$NEXUS_PASS
+                    """
+                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 sh """
-                docker build \
-                  -t ${NEXUS_DOCKER_URL}/${DOCKER_REPO}/${APP_NAME}:${VERSION} \
-                  -t ${NEXUS_DOCKER_URL}/${DOCKER_REPO}/${APP_NAME}:latest .
+                    docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG} .
+                    docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
                 """
             }
         }
 
         stage('Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'docker-credentials',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
+                withCredentials([usernamePassword(credentialsId: 'docker-credentials', 
+                    usernameVariable: 'DOCKER_USER', 
+                    passwordVariable: 'DOCKER_PASS')]) {
                     sh """
-
-                    echo "$DOCKER_PASS" | docker login ${NEXUS_DOCKER_URL} -u "$DOCKER_USER" --password-stdin
-
-                    docker push ${NEXUS_DOCKER_URL}/${DOCKER_REPO}/${APP_NAME}:${VERSION}
-                    docker push ${NEXUS_DOCKER_URL}/${DOCKER_REPO}/${APP_NAME}:latest
-
-                    docker logout ${NEXUS_DOCKER_URL}
+                        echo $DOCKER_PASS | docker login ${DOCKER_REGISTRY} -u $DOCKER_USER --password-stdin
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${DOCKER_TAG}
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
                     """
-
                 }
             }
         }
     }
 
     post {
-        success {
-            echo "✅ Build & Push Successful"
-        }
-        failure {
-            echo "❌ Build Failed"
-        }
         always {
             sh 'docker system prune -f'
             cleanWs()
         }
     }
 }
+
