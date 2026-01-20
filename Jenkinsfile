@@ -24,7 +24,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git branch: 'test',
+                git branch: 'main',
                     url: 'https://github.com/djroy2104/country-chicken-backend.git'
             }
         }
